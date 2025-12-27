@@ -8,6 +8,7 @@ import SwiftUI
 struct MenuBarView: View {
     @Environment(QuotaViewModel.self) private var viewModel
     @Environment(\.openWindow) private var openWindow
+    private let modeManager = AppModeManager.shared
     
     private var allQuotas: [(provider: AIProvider, email: String, data: ProviderQuotaData)] {
         var result: [(provider: AIProvider, email: String, data: ProviderQuotaData)] = []
@@ -32,12 +33,28 @@ struct MenuBarView: View {
             Divider()
                 .padding(.vertical, 8)
             
-            if viewModel.proxyManager.proxyStatus.running {
-                statsSection
-                
-                Divider()
-                    .padding(.vertical, 8)
-                
+            if modeManager.isFullMode {
+                // Full mode: Show everything if proxy is running
+                if viewModel.proxyManager.proxyStatus.running {
+                    statsSection
+                    
+                    Divider()
+                        .padding(.vertical, 8)
+                    
+                    if hasQuotaData {
+                        quotaSection
+                        
+                        Divider()
+                            .padding(.vertical, 8)
+                    }
+                    
+                    providersSection
+                    
+                    Divider()
+                        .padding(.vertical, 8)
+                }
+            } else {
+                // Quota-only mode: Always show quota
                 if hasQuotaData {
                     quotaSection
                     
@@ -45,7 +62,8 @@ struct MenuBarView: View {
                         .padding(.vertical, 8)
                 }
                 
-                providersSection
+                // Show accounts in quota-only mode
+                quotaOnlyAccountsSection
                 
                 Divider()
                     .padding(.vertical, 8)
@@ -63,17 +81,24 @@ struct MenuBarView: View {
         HStack(spacing: 12) {
             // Status indicator
             ZStack {
-                Circle()
-                    .fill(viewModel.proxyManager.proxyStatus.running ? Color.green : Color.gray)
-                    .frame(width: 12, height: 12)
-                
-                if viewModel.proxyManager.proxyStatus.running {
+                if modeManager.isFullMode {
                     Circle()
-                        .fill(Color.green)
+                        .fill(viewModel.proxyManager.proxyStatus.running ? Color.green : Color.gray)
                         .frame(width: 12, height: 12)
-                        .opacity(0.5)
-                        .scaleEffect(1.5)
-                        .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: viewModel.proxyManager.proxyStatus.running)
+                    
+                    if viewModel.proxyManager.proxyStatus.running {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 12, height: 12)
+                            .opacity(0.5)
+                            .scaleEffect(1.5)
+                            .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: viewModel.proxyManager.proxyStatus.running)
+                    }
+                } else {
+                    // Quota-only mode: Show quota icon
+                    Image(systemName: "chart.bar.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
                 }
             }
             
@@ -82,27 +107,53 @@ struct MenuBarView: View {
                     .font(.headline)
                     .fontWeight(.semibold)
                 
-                Text(viewModel.proxyManager.proxyStatus.running 
-                     ? "menubar.running".localized() 
-                     : "menubar.stopped".localized())
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if modeManager.isFullMode {
+                    Text(viewModel.proxyManager.proxyStatus.running 
+                         ? "menubar.running".localized() 
+                         : "menubar.stopped".localized())
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("menubar.quotaMode".localized())
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             
             Spacer()
             
-            // Toggle button
-            Button {
-                Task { await viewModel.toggleProxy() }
-            } label: {
-                Image(systemName: viewModel.proxyManager.proxyStatus.running ? "stop.fill" : "play.fill")
-                    .font(.title3)
-                    .foregroundStyle(viewModel.proxyManager.proxyStatus.running ? .red : .green)
+            // Mode-specific button
+            if modeManager.isFullMode {
+                // Full mode: Toggle proxy
+                Button {
+                    Task { await viewModel.toggleProxy() }
+                } label: {
+                    Image(systemName: viewModel.proxyManager.proxyStatus.running ? "stop.fill" : "play.fill")
+                        .font(.title3)
+                        .foregroundStyle(viewModel.proxyManager.proxyStatus.running ? .red : .green)
+                }
+                .buttonStyle(.plain)
+                .help(viewModel.proxyManager.proxyStatus.running 
+                      ? "action.stopProxy".localized() 
+                      : "action.startProxy".localized())
+            } else {
+                // Quota-only mode: Refresh button
+                Button {
+                    Task { await viewModel.refreshQuotasDirectly() }
+                } label: {
+                    if viewModel.isLoadingQuotas {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.title3)
+                            .foregroundStyle(.blue)
+                    }
+                }
+                .buttonStyle(.plain)
+                .help("action.refreshQuota".localized())
+                .disabled(viewModel.isLoadingQuotas)
             }
-            .buttonStyle(.plain)
-            .help(viewModel.proxyManager.proxyStatus.running 
-                  ? "action.stopProxy".localized() 
-                  : "action.startProxy".localized())
         }
     }
     
@@ -244,7 +295,11 @@ struct MenuBarView: View {
             
             // Refresh
             Button {
-                Task { await viewModel.refreshData() }
+                if modeManager.isFullMode {
+                    Task { await viewModel.refreshData() }
+                } else {
+                    Task { await viewModel.refreshQuotasDirectly() }
+                }
             } label: {
                 HStack {
                     Image(systemName: "arrow.clockwise")
@@ -258,7 +313,7 @@ struct MenuBarView: View {
             .buttonStyle(.plain)
             .padding(.vertical, 6)
             .padding(.horizontal, 8)
-            .disabled(!viewModel.proxyManager.proxyStatus.running)
+            .disabled(modeManager.isFullMode && !viewModel.proxyManager.proxyStatus.running)
             
             Divider()
                 .padding(.vertical, 4)
@@ -266,7 +321,9 @@ struct MenuBarView: View {
             // Quit
             Button {
                 Task {
-                    viewModel.stopProxy()
+                    if modeManager.isFullMode {
+                        viewModel.stopProxy()
+                    }
                     try? await Task.sleep(nanoseconds: 100_000_000)
                     NSApplication.shared.terminate(nil)
                 }
@@ -283,6 +340,61 @@ struct MenuBarView: View {
             .buttonStyle(.plain)
             .padding(.vertical, 6)
             .padding(.horizontal, 8)
+        }
+    }
+    
+    // MARK: - Quota-Only Accounts Section
+    
+    private var quotaOnlyAccountsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("menubar.trackedAccounts".localized())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                Spacer()
+                
+                Text("\(viewModel.directAuthFiles.count)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            
+            if viewModel.directAuthFiles.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "person.crop.circle.badge.questionmark")
+                        .font(.title2)
+                        .foregroundStyle(.tertiary)
+                    
+                    Text("menubar.noAccountsFound".localized())
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+            } else {
+                // Group by provider
+                let groupedAccounts = Dictionary(grouping: viewModel.directAuthFiles) { $0.provider }
+                
+                ForEach(AIProvider.allCases.filter { groupedAccounts[$0] != nil }, id: \.self) { provider in
+                    if let accounts = groupedAccounts[provider] {
+                        HStack(spacing: 8) {
+                            ProviderIcon(provider: provider, size: 16)
+                            
+                            Text(provider.displayName)
+                                .font(.caption)
+                                .lineLimit(1)
+                            
+                            Spacer()
+                            
+                            Text("\(accounts.count)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+            }
         }
     }
     

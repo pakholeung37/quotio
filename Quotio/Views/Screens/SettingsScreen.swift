@@ -8,6 +8,7 @@ import ServiceManagement
 
 struct SettingsScreen: View {
     @Environment(QuotaViewModel.self) private var viewModel
+    private let modeManager = AppModeManager.shared
     
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @AppStorage("showInDock") private var showInDock = true
@@ -24,6 +25,9 @@ struct SettingsScreen: View {
         @Bindable var lang = LanguageManager.shared
         
         Form {
+            // App Mode
+            AppModeSection()
+            
             // General Settings
             Section {
                 Toggle("settings.launchAtLogin".localized(), isOn: $launchAtLogin)
@@ -66,96 +70,98 @@ struct SettingsScreen: View {
                 Text("settings.restartForEffect".localized())
             }
             
-            // Proxy Server
-            Section {
-                HStack {
-                    Text("settings.port".localized())
-                    Spacer()
-                    TextField("settings.port".localized(), text: $portText)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 100)
-                        .onChange(of: portText) { _, newValue in
-                            if let port = UInt16(newValue), port > 0 {
-                                viewModel.proxyManager.port = port
-                            }
-                        }
-                }
-                
-                LabeledContent("settings.status".localized()) {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(viewModel.proxyManager.proxyStatus.running ? .green : .gray)
-                            .frame(width: 8, height: 8)
-                        Text(viewModel.proxyManager.proxyStatus.running ? "status.running".localized() : "status.stopped".localized())
-                    }
-                }
-                
-                LabeledContent("settings.endpoint".localized()) {
+            // Proxy Server - Only in Full Mode
+            if modeManager.isFullMode {
+                Section {
                     HStack {
-                        Text(viewModel.proxyManager.proxyStatus.endpoint)
-                            .font(.system(.body, design: .monospaced))
-                            .textSelection(.enabled)
-                        
-                        Button {
-                            viewModel.proxyManager.copyEndpointToClipboard()
-                        } label: {
-                            Image(systemName: "doc.on.doc")
-                        }
-                        .buttonStyle(.borderless)
+                        Text("settings.port".localized())
+                        Spacer()
+                        TextField("settings.port".localized(), text: $portText)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 100)
+                            .onChange(of: portText) { _, newValue in
+                                if let port = UInt16(newValue), port > 0 {
+                                    viewModel.proxyManager.port = port
+                                }
+                            }
                     }
+                    
+                    LabeledContent("settings.status".localized()) {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(viewModel.proxyManager.proxyStatus.running ? .green : .gray)
+                                .frame(width: 8, height: 8)
+                            Text(viewModel.proxyManager.proxyStatus.running ? "status.running".localized() : "status.stopped".localized())
+                        }
+                    }
+                    
+                    LabeledContent("settings.endpoint".localized()) {
+                        HStack {
+                            Text(viewModel.proxyManager.proxyStatus.endpoint)
+                                .font(.system(.body, design: .monospaced))
+                                .textSelection(.enabled)
+                            
+                            Button {
+                                viewModel.proxyManager.copyEndpointToClipboard()
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                    
+                    Toggle("settings.autoStartProxy".localized(), isOn: $autoStartProxy)
+                } header: {
+                    Label("settings.proxyServer".localized(), systemImage: "server.rack")
+                } footer: {
+                    Text("settings.restartProxy".localized())
                 }
                 
-                Toggle("settings.autoStartProxy".localized(), isOn: $autoStartProxy)
-            } header: {
-                Label("settings.proxyServer".localized(), systemImage: "server.rack")
-            } footer: {
-                Text("settings.restartProxy".localized())
-            }
-            
-            // Routing Strategy
-            Section {
-                Picker("settings.routingStrategy".localized(), selection: $routingStrategy) {
-                    Text("settings.roundRobin".localized()).tag("round-robin")
-                    Text("settings.fillFirst".localized()).tag("fill-first")
-                }
-                .pickerStyle(.segmented)
-            } header: {
-                Label("settings.routingStrategy".localized(), systemImage: "arrow.triangle.branch")
-            } footer: {
-                Text(routingStrategy == "round-robin"
-                     ? "settings.roundRobinDesc".localized()
-                     : "settings.fillFirstDesc".localized())
-            }
-            
-            // Quota Exceeded Behavior
-            Section {
-                Toggle("settings.autoSwitchAccount".localized(), isOn: $switchProject)
-                Toggle("settings.autoSwitchPreview".localized(), isOn: $switchPreviewModel)
-            } header: {
-                Label("settings.quotaExceededBehavior".localized(), systemImage: "exclamationmark.triangle")
-            } footer: {
-                Text("settings.quotaExceededHelp".localized())
-            }
-            
-            // Retry Configuration
-            Section {
-                Stepper("settings.maxRetries".localized() + ": \(requestRetry)", value: $requestRetry, in: 0...10)
-            } header: {
-                Label("settings.retryConfiguration".localized(), systemImage: "arrow.clockwise")
-            } footer: {
-                Text("settings.retryHelp".localized())
-            }
-            
-            // Logging
-            Section {
-                Toggle("settings.loggingToFile".localized(), isOn: $loggingToFile)
-                    .onChange(of: loggingToFile) { _, newValue in
-                        viewModel.proxyManager.updateConfigLogging(enabled: newValue)
+                // Routing Strategy
+                Section {
+                    Picker("settings.routingStrategy".localized(), selection: $routingStrategy) {
+                        Text("settings.roundRobin".localized()).tag("round-robin")
+                        Text("settings.fillFirst".localized()).tag("fill-first")
                     }
-            } header: {
-                Label("settings.logging".localized(), systemImage: "doc.text")
-            } footer: {
-                Text("settings.loggingHelp".localized())
+                    .pickerStyle(.segmented)
+                } header: {
+                    Label("settings.routingStrategy".localized(), systemImage: "arrow.triangle.branch")
+                } footer: {
+                    Text(routingStrategy == "round-robin"
+                         ? "settings.roundRobinDesc".localized()
+                         : "settings.fillFirstDesc".localized())
+                }
+                
+                // Quota Exceeded Behavior
+                Section {
+                    Toggle("settings.autoSwitchAccount".localized(), isOn: $switchProject)
+                    Toggle("settings.autoSwitchPreview".localized(), isOn: $switchPreviewModel)
+                } header: {
+                    Label("settings.quotaExceededBehavior".localized(), systemImage: "exclamationmark.triangle")
+                } footer: {
+                    Text("settings.quotaExceededHelp".localized())
+                }
+                
+                // Retry Configuration
+                Section {
+                    Stepper("settings.maxRetries".localized() + ": \(requestRetry)", value: $requestRetry, in: 0...10)
+                } header: {
+                    Label("settings.retryConfiguration".localized(), systemImage: "arrow.clockwise")
+                } footer: {
+                    Text("settings.retryHelp".localized())
+                }
+                
+                // Logging
+                Section {
+                    Toggle("settings.loggingToFile".localized(), isOn: $loggingToFile)
+                        .onChange(of: loggingToFile) { _, newValue in
+                            viewModel.proxyManager.updateConfigLogging(enabled: newValue)
+                        }
+                } header: {
+                    Label("settings.logging".localized(), systemImage: "doc.text")
+                } footer: {
+                    Text("settings.loggingHelp".localized())
+                }
             }
             
             // Notifications
@@ -167,27 +173,101 @@ struct SettingsScreen: View {
             // Updates
             UpdateSettingsSection()
             
-            // Paths
-            Section {
-                LabeledContent("settings.binary".localized()) {
-                    PathLabel(path: viewModel.proxyManager.binaryPath)
+            // Paths - Only in Full Mode
+            if modeManager.isFullMode {
+                Section {
+                    LabeledContent("settings.binary".localized()) {
+                        PathLabel(path: viewModel.proxyManager.binaryPath)
+                    }
+                    
+                    LabeledContent("settings.config".localized()) {
+                        PathLabel(path: viewModel.proxyManager.configPath)
+                    }
+                    
+                    LabeledContent("settings.authDir".localized()) {
+                        PathLabel(path: viewModel.proxyManager.authDir)
+                    }
+                } header: {
+                    Label("settings.paths".localized(), systemImage: "folder")
                 }
-                
-                LabeledContent("settings.config".localized()) {
-                    PathLabel(path: viewModel.proxyManager.configPath)
-                }
-                
-                LabeledContent("settings.authDir".localized()) {
-                    PathLabel(path: viewModel.proxyManager.authDir)
-                }
-            } header: {
-                Label("settings.paths".localized(), systemImage: "folder")
             }
         }
         .formStyle(.grouped)
         .navigationTitle("nav.settings".localized())
         .onAppear {
             portText = String(viewModel.proxyManager.port)
+        }
+    }
+}
+
+// MARK: - App Mode Section
+
+struct AppModeSection: View {
+    @Environment(QuotaViewModel.self) private var viewModel
+    private let modeManager = AppModeManager.shared
+    @State private var showModeChangeConfirmation = false
+    @State private var pendingMode: AppMode?
+    
+    var body: some View {
+        Section {
+            Picker("settings.appMode".localized(), selection: Binding(
+                get: { modeManager.currentMode },
+                set: { newMode in
+                    if modeManager.isFullMode && newMode == .quotaOnly {
+                        // Confirm before switching from full to quota-only
+                        pendingMode = newMode
+                        showModeChangeConfirmation = true
+                    } else {
+                        // Switch immediately for other transitions
+                        switchToMode(newMode)
+                    }
+                }
+            )) {
+                ForEach(AppMode.allCases) { mode in
+                    HStack {
+                        Image(systemName: mode.icon)
+                        Text(mode.displayName)
+                    }
+                    .tag(mode)
+                }
+            }
+            
+            // Description of current mode
+            Text(modeManager.currentMode.description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                
+        } header: {
+            Label("settings.appMode".localized(), systemImage: "switch.2")
+        } footer: {
+            if modeManager.isQuotaOnlyMode {
+                Label("settings.appMode.quotaOnlyNote".localized(), systemImage: "info.circle")
+                    .font(.caption)
+            }
+        }
+        .alert("settings.appMode.switchConfirmTitle".localized(), isPresented: $showModeChangeConfirmation) {
+            Button("action.cancel".localized(), role: .cancel) {
+                pendingMode = nil
+            }
+            Button("action.switch".localized()) {
+                if let mode = pendingMode {
+                    switchToMode(mode)
+                }
+                pendingMode = nil
+            }
+        } message: {
+            Text("settings.appMode.switchConfirmMessage".localized())
+        }
+    }
+    
+    private func switchToMode(_ mode: AppMode) {
+        modeManager.switchMode(to: mode) {
+            viewModel.stopProxy()
+        }
+        
+        // Re-initialize based on new mode
+        Task {
+            await viewModel.initialize()
         }
     }
 }

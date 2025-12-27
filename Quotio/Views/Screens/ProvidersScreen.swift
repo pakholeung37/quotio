@@ -12,10 +12,20 @@ struct ProvidersScreen: View {
     @State private var isImporterPresented = false
     @State private var selectedProvider: AIProvider?
     @State private var projectId: String = ""
+    private let modeManager = AppModeManager.shared
+    
+    /// Check if we should show content
+    private var shouldShowContent: Bool {
+        if modeManager.isQuotaOnlyMode {
+            return true // Always show in quota-only mode
+        }
+        return viewModel.proxyManager.proxyStatus.running
+    }
     
     var body: some View {
         List {
-            if !viewModel.proxyManager.proxyStatus.running {
+            if modeManager.isFullMode && !viewModel.proxyManager.proxyStatus.running {
+                // Full mode: Proxy not running
                 Section {
                     ContentUnavailableView {
                         Label("empty.proxyNotRunning".localized(), systemImage: "exclamationmark.triangle")
@@ -23,70 +33,15 @@ struct ProvidersScreen: View {
                         Text("providers.startProxyFirst".localized())
                     }
                 }
+            } else if modeManager.isQuotaOnlyMode {
+                // Quota-only mode: Show direct auth files and add providers
+                quotaOnlyContent
             } else {
-                // Connected Accounts
-                Section {
-                    if viewModel.authFiles.isEmpty {
-                        Text("providers.noAccountsYet".localized())
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(viewModel.authFiles, id: \.id) { file in
-                            AuthFileRow(file: file) {
-                                Task { await viewModel.deleteAuthFile(file) }
-                            }
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    Task { await viewModel.deleteAuthFile(file) }
-                                } label: {
-                                    Label("action.delete".localized(), systemImage: "trash")
-                                }
-                            }
-                        }
-                    }
-                } header: {
-                    Label("providers.connectedAccounts".localized() + " (\(viewModel.authFiles.count))", systemImage: "checkmark.seal.fill")
-                }
-                
-                // Add Provider
-                Section {
-                    ForEach(AIProvider.allCases) { provider in
-                    Button {
-                        if provider == .vertex {
-                            isImporterPresented = true
-                        } else {
-                            viewModel.oauthState = nil
-                            selectedProvider = provider
-                        }
-                    } label: {
-                            HStack {
-                                ProviderIcon(provider: provider, size: 24)
-                                
-                                Text(provider.displayName)
-                                
-                                Spacer()
-                                
-                                if let count = viewModel.authFilesByProvider[provider]?.count, count > 0 {
-                                    Text("\(count)")
-                                        .font(.caption)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 2)
-                                        .background(provider.color.opacity(0.15))
-                                        .foregroundStyle(provider.color)
-                                        .clipShape(Capsule())
-                                }
-                                
-                                Image(systemName: "plus.circle")
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } header: {
-                    Label("providers.addProvider".localized(), systemImage: "plus.circle.fill")
-                }
+                // Full mode: Show connected accounts
+                fullModeContent
             }
         }
-        .navigationTitle("nav.providers".localized())
+        .navigationTitle(modeManager.isQuotaOnlyMode ? "nav.accounts".localized() : "nav.providers".localized())
         .sheet(item: $selectedProvider) { provider in
             OAuthSheet(provider: provider, projectId: $projectId) {
                 selectedProvider = nil
@@ -110,6 +65,176 @@ struct ProvidersScreen: View {
             case .failure(let error):
                 print("Import failed: \(error.localizedDescription)")
             }
+        }
+        .task {
+            if modeManager.isQuotaOnlyMode {
+                await viewModel.loadDirectAuthFiles()
+            }
+        }
+    }
+    
+    // MARK: - Full Mode Content
+    
+    @ViewBuilder
+    private var fullModeContent: some View {
+        // Connected Accounts
+        Section {
+            if viewModel.authFiles.isEmpty {
+                Text("providers.noAccountsYet".localized())
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(viewModel.authFiles, id: \.id) { file in
+                    AuthFileRow(file: file) {
+                        Task { await viewModel.deleteAuthFile(file) }
+                    }
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            Task { await viewModel.deleteAuthFile(file) }
+                        } label: {
+                            Label("action.delete".localized(), systemImage: "trash")
+                        }
+                    }
+                }
+            }
+        } header: {
+            Label("providers.connectedAccounts".localized() + " (\(viewModel.authFiles.count))", systemImage: "checkmark.seal.fill")
+        }
+        
+        // Add Provider
+        addProviderSection
+    }
+    
+    // MARK: - Quota-Only Mode Content
+    
+    @ViewBuilder
+    private var quotaOnlyContent: some View {
+        // Tracked Accounts (from direct auth files)
+        Section {
+            if viewModel.directAuthFiles.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "person.crop.circle.badge.questionmark")
+                        .font(.largeTitle)
+                        .foregroundStyle(.tertiary)
+                    
+                    Text("providers.noAccountsFound".localized())
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    
+                    Text("providers.quotaOnlyHint".localized())
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+            } else {
+                ForEach(viewModel.directAuthFiles) { file in
+                    DirectAuthFileRow(file: file)
+                }
+            }
+        } header: {
+            HStack {
+                Label("providers.trackedAccounts".localized() + " (\(viewModel.directAuthFiles.count))", systemImage: "person.2.badge.key")
+                
+                Spacer()
+                
+                Button {
+                    Task { await viewModel.loadDirectAuthFiles() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        
+        // Add Provider (for OAuth)
+        addProviderSection
+    }
+    
+    // MARK: - Add Provider Section
+    
+    private var addProviderSection: some View {
+        Section {
+            ForEach(AIProvider.allCases) { provider in
+                Button {
+                    if provider == .vertex {
+                        isImporterPresented = true
+                    } else {
+                        viewModel.oauthState = nil
+                        selectedProvider = provider
+                    }
+                } label: {
+                    HStack {
+                        ProviderIcon(provider: provider, size: 24)
+                        
+                        Text(provider.displayName)
+                        
+                        Spacer()
+                        
+                        if modeManager.isFullMode,
+                           let count = viewModel.authFilesByProvider[provider]?.count, count > 0 {
+                            Text("\(count)")
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(provider.color.opacity(0.15))
+                                .foregroundStyle(provider.color)
+                                .clipShape(Capsule())
+                        } else if modeManager.isQuotaOnlyMode {
+                            let count = viewModel.directAuthFiles.filter { $0.provider == provider }.count
+                            if count > 0 {
+                                Text("\(count)")
+                                    .font(.caption)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 2)
+                                    .background(provider.color.opacity(0.15))
+                                    .foregroundStyle(provider.color)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        
+                        Image(systemName: "plus.circle")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        } header: {
+            Label("providers.addProvider".localized(), systemImage: "plus.circle.fill")
+        }
+    }
+}
+
+// MARK: - Direct Auth File Row (for Quota-Only Mode)
+
+struct DirectAuthFileRow: View {
+    let file: DirectAuthFile
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            ProviderIcon(provider: file.provider, size: 24)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(file.email ?? file.filename)
+                    .fontWeight(.medium)
+                
+                HStack(spacing: 6) {
+                    Text(file.provider.displayName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    Text("•")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                    
+                    Text(file.source.displayName)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            
+            Spacer()
         }
     }
 }

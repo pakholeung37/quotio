@@ -18,6 +18,7 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
     case vertex = "vertex"
     case kiro = "kiro"
     case copilot = "github-copilot"
+    case cursor = "cursor"
     
     var id: String { rawValue }
     
@@ -32,6 +33,7 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
         case .vertex: return "Vertex AI"
         case .kiro: return "Kiro (CodeWhisperer)"
         case .copilot: return "GitHub Copilot"
+        case .cursor: return "Cursor"
         }
     }
     
@@ -46,6 +48,7 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
         case .vertex: return "cube"
         case .kiro: return "cloud.fill"
         case .copilot: return "chevron.left.forwardslash.chevron.right"
+        case .cursor: return "cursorarrow.rays"
         }
     }
     
@@ -61,6 +64,7 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
         case .vertex: return "vertex"
         case .kiro: return "kiro"
         case .copilot: return "copilot"
+        case .cursor: return "cursor"
         }
     }
     
@@ -75,6 +79,7 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
         case .vertex: return Color(hex: "EA4335") ?? .red
         case .kiro: return Color(hex: "9046FF") ?? .purple
         case .copilot: return Color(hex: "238636") ?? .green
+        case .cursor: return Color(hex: "00D4AA") ?? .teal
         }
     }
     
@@ -89,6 +94,7 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
         case .vertex: return ""
         case .kiro: return ""  // Uses CLI-based auth like Copilot
         case .copilot: return ""
+        case .cursor: return ""  // Uses browser session
         }
     }
     
@@ -104,6 +110,7 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
         case .vertex: return "V"
         case .kiro: return "K"
         case .copilot: return "CP"
+        case .cursor: return "CR"
         }
     }
     
@@ -120,6 +127,37 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
         case .kiro: return "kiro-menubar"
         case .iflow: return "iflow-menubar"
         case .vertex: return "vertex-menubar"
+        case .cursor: return "cursor-menubar"
+        }
+    }
+    
+    /// Whether this provider supports quota tracking in quota-only mode
+    var supportsQuotaOnlyMode: Bool {
+        switch self {
+        case .claude, .codex, .cursor, .gemini, .antigravity, .copilot:
+            return true
+        case .qwen, .iflow, .vertex, .kiro:
+            return false
+        }
+    }
+    
+    /// Whether this provider uses browser cookies for auth
+    var usesBrowserAuth: Bool {
+        switch self {
+        case .cursor:
+            return true
+        default:
+            return false
+        }
+    }
+    
+    /// Whether this provider uses CLI commands for quota
+    var usesCLIQuota: Bool {
+        switch self {
+        case .claude, .codex, .gemini:
+            return true
+        default:
+            return false
         }
     }
 }

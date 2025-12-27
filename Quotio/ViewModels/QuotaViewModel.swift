@@ -15,7 +15,16 @@ final class QuotaViewModel {
     private let antigravityFetcher = AntigravityQuotaFetcher()
     private let openAIFetcher = OpenAIQuotaFetcher()
     private let copilotFetcher = CopilotQuotaFetcher()
+    private let directAuthService = DirectAuthFileService()
     private let notificationManager = NotificationManager.shared
+    private let modeManager = AppModeManager.shared
+    
+    // Quota-Only Mode Fetchers (CLI-based)
+    private let claudeCodeFetcher = ClaudeCodeQuotaFetcher()
+    private let cursorFetcher = CursorQuotaFetcher()
+    private let codexCLIFetcher = CodexCLIQuotaFetcher()
+    private let geminiCLIFetcher = GeminiCLIQuotaFetcher()
+    
     private var lastKnownAccountStatuses: [String: String] = [:]
     
     var currentPage: NavigationPage = .dashboard
@@ -27,6 +36,12 @@ final class QuotaViewModel {
     var isLoadingQuotas = false
     var errorMessage: String?
     var oauthState: OAuthState?
+    
+    /// Direct auth files for quota-only mode
+    var directAuthFiles: [DirectAuthFile] = []
+    
+    /// Last quota refresh time (for quota-only mode display)
+    var lastQuotaRefreshTime: Date?
     
     private var _agentSetupViewModel: AgentSetupViewModel?
     var agentSetupViewModel: AgentSetupViewModel {
@@ -50,6 +65,134 @@ final class QuotaViewModel {
     
     init() {
         self.proxyManager = CLIProxyManager.shared
+    }
+    
+    // MARK: - Mode-Aware Initialization
+    
+    /// Initialize the app based on current mode
+    func initialize() async {
+        if modeManager.isQuotaOnlyMode {
+            await initializeQuotaOnlyMode()
+        } else {
+            await initializeFullMode()
+        }
+    }
+    
+    /// Initialize for Full Mode (with proxy)
+    private func initializeFullMode() async {
+        let autoStartProxy = UserDefaults.standard.bool(forKey: "autoStartProxy")
+        if autoStartProxy && proxyManager.isBinaryInstalled {
+            await startProxy()
+        }
+    }
+    
+    /// Initialize for Quota-Only Mode (no proxy)
+    private func initializeQuotaOnlyMode() async {
+        // Load auth files directly from filesystem
+        await loadDirectAuthFiles()
+        
+        // Fetch quotas directly
+        await refreshQuotasDirectly()
+        
+        // Start auto-refresh for quota-only mode
+        startQuotaOnlyAutoRefresh()
+    }
+    
+    // MARK: - Direct Auth File Management (Quota-Only Mode)
+    
+    /// Load auth files directly from filesystem
+    func loadDirectAuthFiles() async {
+        directAuthFiles = await directAuthService.scanAllAuthFiles()
+    }
+    
+    /// Refresh quotas directly without proxy (for Quota-Only Mode)
+    func refreshQuotasDirectly() async {
+        guard !isLoadingQuotas else { return }
+        
+        isLoadingQuotas = true
+        lastQuotaRefreshTime = Date()
+        
+        // Fetch from all available fetchers in parallel
+        // These fetchers use CLI commands or browser cookies directly
+        async let antigravity: () = refreshAntigravityQuotasInternal()
+        async let openai: () = refreshOpenAIQuotasInternal()
+        async let copilot: () = refreshCopilotQuotasInternal()
+        async let claudeCode: () = refreshClaudeCodeQuotasInternal()
+        async let cursor: () = refreshCursorQuotasInternal()
+        async let codexCLI: () = refreshCodexCLIQuotasInternal()
+        async let geminiCLI: () = refreshGeminiCLIQuotasInternal()
+        
+        _ = await (antigravity, openai, copilot, claudeCode, cursor, codexCLI, geminiCLI)
+        
+        checkQuotaNotifications()
+        
+        isLoadingQuotas = false
+    }
+    
+    /// Refresh Claude Code quota using CLI
+    private func refreshClaudeCodeQuotasInternal() async {
+        let quotas = await claudeCodeFetcher.fetchAsProviderQuota()
+        if !quotas.isEmpty {
+            providerQuotas[.claude] = quotas
+        }
+    }
+    
+    /// Refresh Cursor quota using browser cookies
+    private func refreshCursorQuotasInternal() async {
+        let quotas = await cursorFetcher.fetchAsProviderQuota()
+        if !quotas.isEmpty {
+            providerQuotas[.cursor] = quotas
+        }
+    }
+    
+    /// Refresh Codex quota using CLI auth file (~/.codex/auth.json)
+    private func refreshCodexCLIQuotasInternal() async {
+        // Only use CLI fetcher if proxy is not available or in quota-only mode
+        // The openAIFetcher handles Codex via proxy auth files
+        guard modeManager.isQuotaOnlyMode else { return }
+        
+        let quotas = await codexCLIFetcher.fetchAsProviderQuota()
+        if !quotas.isEmpty {
+            // Merge with existing codex quotas (from proxy if any)
+            if var existing = providerQuotas[.codex] {
+                for (email, quota) in quotas {
+                    existing[email] = quota
+                }
+                providerQuotas[.codex] = existing
+            } else {
+                providerQuotas[.codex] = quotas
+            }
+        }
+    }
+    
+    /// Refresh Gemini quota using CLI auth file (~/.gemini/oauth_creds.json)
+    private func refreshGeminiCLIQuotasInternal() async {
+        // Only use CLI fetcher in quota-only mode
+        guard modeManager.isQuotaOnlyMode else { return }
+        
+        let quotas = await geminiCLIFetcher.fetchAsProviderQuota()
+        if !quotas.isEmpty {
+            if var existing = providerQuotas[.gemini] {
+                for (email, quota) in quotas {
+                    existing[email] = quota
+                }
+                providerQuotas[.gemini] = existing
+            } else {
+                providerQuotas[.gemini] = quotas
+            }
+        }
+    }
+    
+    /// Start auto-refresh for quota-only mode
+    private func startQuotaOnlyAutoRefresh() {
+        refreshTask?.cancel()
+        refreshTask = Task {
+            while !Task.isCancelled {
+                // Refresh every 60 seconds in quota-only mode
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                await refreshQuotasDirectly()
+            }
+        }
     }
     
     var authFilesByProvider: [AIProvider: [AuthFile]] {
@@ -159,8 +302,10 @@ final class QuotaViewModel {
         async let antigravity: () = refreshAntigravityQuotasInternal()
         async let openai: () = refreshOpenAIQuotasInternal()
         async let copilot: () = refreshCopilotQuotasInternal()
+        async let cursor: () = refreshCursorQuotasInternal()
+        async let claudeCode: () = refreshClaudeCodeQuotasInternal()
         
-        _ = await (antigravity, openai, copilot)
+        _ = await (antigravity, openai, copilot, cursor, claudeCode)
         
         checkQuotaNotifications()
         
@@ -191,8 +336,15 @@ final class QuotaViewModel {
             await refreshAntigravityQuotasInternal()
         case .codex:
             await refreshOpenAIQuotasInternal()
+            await refreshCodexCLIQuotasInternal()
         case .copilot:
             await refreshCopilotQuotasInternal()
+        case .claude:
+            await refreshClaudeCodeQuotasInternal()
+        case .cursor:
+            await refreshCursorQuotasInternal()
+        case .gemini:
+            await refreshGeminiCLIQuotasInternal()
         default:
             break
         }

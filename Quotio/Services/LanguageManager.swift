@@ -92,6 +92,7 @@ struct LocalizedStrings {
         "quota.accountsReady": [.english: "accounts ready", .vietnamese: "tài khoản sẵn sàng"],
         "quota.used": [.english: "used", .vietnamese: "đã dùng"],
         "quota.reset": [.english: "reset", .vietnamese: "đặt lại"],
+        "quota.noDataYet": [.english: "No usage data available", .vietnamese: "Chưa có dữ liệu sử dụng"],
         
         // Providers
         "providers.addProvider": [.english: "Add Provider", .vietnamese: "Thêm nhà cung cấp"],
@@ -379,6 +380,47 @@ struct LocalizedStrings {
         // Dashboard
         "dashboard.gettingStarted": [.english: "Getting Started", .vietnamese: "Bắt đầu"],
         "action.dismiss": [.english: "Dismiss", .vietnamese: "Ẩn"],
+        
+        // Quota-Only Mode - New Keys
+        "nav.accounts": [.english: "Accounts", .vietnamese: "Tài khoản"],
+        "dashboard.trackedAccounts": [.english: "Tracked Accounts", .vietnamese: "Tài khoản theo dõi"],
+        "dashboard.connected": [.english: "connected", .vietnamese: "đã kết nối"],
+        "dashboard.lowestQuota": [.english: "Lowest Quota", .vietnamese: "Quota thấp nhất"],
+        "dashboard.remaining": [.english: "remaining", .vietnamese: "còn lại"],
+        "dashboard.lastRefresh": [.english: "Last Refresh", .vietnamese: "Cập nhật lần cuối"],
+        "dashboard.updated": [.english: "updated", .vietnamese: "đã cập nhật"],
+        "dashboard.noQuotaData": [.english: "No quota data yet", .vietnamese: "Chưa có dữ liệu quota"],
+        "dashboard.quotaOverview": [.english: "Quota Overview", .vietnamese: "Tổng quan Quota"],
+        "dashboard.noAccountsTracked": [.english: "No accounts tracked", .vietnamese: "Chưa theo dõi tài khoản nào"],
+        "dashboard.addAccountsHint": [.english: "Add provider accounts to start tracking quotas", .vietnamese: "Thêm tài khoản nhà cung cấp để bắt đầu theo dõi quota"],
+        
+        // Providers - Quota-Only Mode
+        "providers.noAccountsFound": [.english: "No accounts found", .vietnamese: "Không tìm thấy tài khoản"],
+        "providers.quotaOnlyHint": [.english: "Auth files will be detected from ~/.cli-proxy-api and native CLI locations", .vietnamese: "File xác thực sẽ được phát hiện từ ~/.cli-proxy-api và các vị trí CLI gốc"],
+        "providers.trackedAccounts": [.english: "Tracked Accounts", .vietnamese: "Tài khoản theo dõi"],
+        
+        // Empty States - New
+        "empty.noQuotaData": [.english: "No Quota Data", .vietnamese: "Chưa có dữ liệu Quota"],
+        "empty.refreshToLoad": [.english: "Refresh to load quota information", .vietnamese: "Làm mới để tải thông tin quota"],
+        
+        // Menu Bar - Quota Mode
+        "menubar.quotaMode": [.english: "Quota Monitor", .vietnamese: "Theo dõi Quota"],
+        "menubar.trackedAccounts": [.english: "Tracked Accounts", .vietnamese: "Tài khoản theo dõi"],
+        "menubar.noAccountsFound": [.english: "No accounts found", .vietnamese: "Không tìm thấy tài khoản"],
+        
+        // Actions - New
+        "action.refreshQuota": [.english: "Refresh Quota", .vietnamese: "Làm mới Quota"],
+        "action.switch": [.english: "Switch", .vietnamese: "Chuyển"],
+        
+        // Status - New
+        "status.refreshing": [.english: "Refreshing...", .vietnamese: "Đang làm mới..."],
+        "status.notRefreshed": [.english: "Not refreshed", .vietnamese: "Chưa làm mới"],
+        
+        // Settings - App Mode
+        "settings.appMode": [.english: "App Mode", .vietnamese: "Chế độ ứng dụng"],
+        "settings.appMode.quotaOnlyNote": [.english: "Proxy server is disabled in Quota Monitor mode", .vietnamese: "Máy chủ proxy bị tắt trong chế độ Theo dõi Quota"],
+        "settings.appMode.switchConfirmTitle": [.english: "Switch to Quota Monitor Mode?", .vietnamese: "Chuyển sang chế độ Theo dõi Quota?"],
+        "settings.appMode.switchConfirmMessage": [.english: "This will stop the proxy server if running. You can switch back anytime.", .vietnamese: "Điều này sẽ dừng máy chủ proxy nếu đang chạy. Bạn có thể chuyển lại bất cứ lúc nào."],
     ]
     
     static func get(_ key: String, language: AppLanguage) -> String {

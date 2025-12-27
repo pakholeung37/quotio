@@ -116,6 +116,11 @@ struct ModelQuota: Codable, Identifiable, Sendable {
     let percentage: Double
     let resetTime: String
     
+    // Optional usage details for providers that support it (e.g., Cursor)
+    var used: Int?
+    var limit: Int?
+    var remaining: Int?
+    
     var id: String { name }
     
     var usedPercentage: Double {
@@ -123,10 +128,22 @@ struct ModelQuota: Codable, Identifiable, Sendable {
     }
     
     var formattedPercentage: String {
+        if percentage < 0 {
+            return "—" // Unknown/unavailable
+        }
         if percentage == percentage.rounded() {
             return String(format: "%.0f%%", percentage)
         }
         return String(format: "%.2f%%", percentage)
+    }
+    
+    /// Formatted usage string like "150/2000" or "150 used"
+    var formattedUsage: String? {
+        guard let used = used else { return nil }
+        if let limit = limit, limit > 0 {
+            return "\(used)/\(limit)"
+        }
+        return "\(used) used"
     }
     
     var modelGroup: AntigravityModelGroup? {
@@ -144,6 +161,15 @@ struct ModelQuota: Codable, Identifiable, Sendable {
         case "copilot-chat": return "Chat"
         case "copilot-completions": return "Completions"
         case "copilot-premium": return "Premium"
+        // Cursor quota names
+        case "plan-usage": return "Plan Usage"
+        case "on-demand": return "On-Demand"
+        case "cursor-usage": return "Usage"
+        // Claude Code quota names
+        case "weekly-usage": return "Weekly Usage"
+        case "sonnet-only": return "Sonnet Only"
+        // Gemini CLI
+        case "gemini-quota": return "Gemini"
         default: return name
         }
     }

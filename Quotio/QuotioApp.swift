@@ -16,8 +16,11 @@ struct QuotioApp: App {
     @State private var viewModel = QuotaViewModel()
     @State private var menuBarSettings = MenuBarSettingsManager.shared
     @State private var statusBarManager = StatusBarManager.shared
+    @State private var showOnboarding = false
     @AppStorage("autoStartProxy") private var autoStartProxy = false
     @Environment(\.openWindow) private var openWindow
+    
+    private let modeManager = AppModeManager.shared
     
     #if canImport(Sparkle)
     private let updaterService = UpdaterService.shared
@@ -25,7 +28,11 @@ struct QuotioApp: App {
     
     private var quotaItems: [MenuBarQuotaDisplayItem] {
         guard menuBarSettings.showQuotaInMenuBar else { return [] }
-        guard viewModel.proxyManager.proxyStatus.running else { return [] }
+        
+        // In quota-only mode, show quota even without proxy running
+        if modeManager.isFullMode && !viewModel.proxyManager.proxyStatus.running {
+            return []
+        }
         
         var items: [MenuBarQuotaDisplayItem] = []
         
@@ -58,10 +65,12 @@ struct QuotioApp: App {
     }
     
     private func updateStatusBar() {
+        let isRunning = modeManager.isFullMode ? viewModel.proxyManager.proxyStatus.running : true
+        
         statusBarManager.updateStatusBar(
             items: quotaItems,
             colorMode: menuBarSettings.colorMode,
-            isRunning: viewModel.proxyManager.proxyStatus.running,
+            isRunning: isRunning,
             showQuota: menuBarSettings.showQuotaInMenuBar,
             menuContentProvider: {
                 AnyView(
@@ -72,19 +81,29 @@ struct QuotioApp: App {
         )
     }
     
+    private func initializeApp() async {
+        // Check if onboarding needed
+        if !modeManager.hasCompletedOnboarding {
+            showOnboarding = true
+            return
+        }
+        
+        // Initialize based on mode
+        await viewModel.initialize()
+        
+        #if canImport(Sparkle)
+        updaterService.checkForUpdatesInBackground()
+        #endif
+        
+        updateStatusBar()
+    }
+    
     var body: some Scene {
         Window("Quotio", id: "main") {
             ContentView()
                 .environment(viewModel)
                 .task {
-                    if autoStartProxy && viewModel.proxyManager.isBinaryInstalled {
-                        await viewModel.startProxy()
-                    }
-                    #if canImport(Sparkle)
-                    updaterService.checkForUpdatesInBackground()
-                    #endif
-                    
-                    updateStatusBar()
+                    await initializeApp()
                 }
                 .onChange(of: viewModel.proxyManager.proxyStatus.running) {
                     updateStatusBar()
@@ -100,6 +119,11 @@ struct QuotioApp: App {
                 }
                 .onChange(of: menuBarSettings.colorMode) {
                     updateStatusBar()
+                }
+                .sheet(isPresented: $showOnboarding) {
+                    ModePickerView {
+                        Task { await initializeApp() }
+                    }
                 }
         }
         .defaultSize(width: 1000, height: 700)
@@ -186,6 +210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct ContentView: View {
     @Environment(QuotaViewModel.self) private var viewModel
     @AppStorage("loggingToFile") private var loggingToFile = true
+    private let modeManager = AppModeManager.shared
     
     var body: some View {
         @Bindable var vm = viewModel
@@ -193,24 +218,29 @@ struct ContentView: View {
         NavigationSplitView {
             List(selection: $vm.currentPage) {
                 Section {
+                    // Always visible
                     Label("nav.dashboard".localized(), systemImage: "gauge.with.dots.needle.33percent")
                         .tag(NavigationPage.dashboard)
                     
                     Label("nav.quota".localized(), systemImage: "chart.bar.fill")
                         .tag(NavigationPage.quota)
                     
-                    Label("nav.providers".localized(), systemImage: "person.2.badge.key")
+                    Label(modeManager.isQuotaOnlyMode ? "nav.accounts".localized() : "nav.providers".localized(), 
+                          systemImage: "person.2.badge.key")
                         .tag(NavigationPage.providers)
                     
-                    Label("nav.agents".localized(), systemImage: "terminal")
-                        .tag(NavigationPage.agents)
-                    
-                    Label("nav.apiKeys".localized(), systemImage: "key.horizontal")
-                        .tag(NavigationPage.apiKeys)
-                    
-                    if loggingToFile {
-                        Label("nav.logs".localized(), systemImage: "doc.text")
-                            .tag(NavigationPage.logs)
+                    // Full mode only
+                    if modeManager.isFullMode {
+                        Label("nav.agents".localized(), systemImage: "terminal")
+                            .tag(NavigationPage.agents)
+                        
+                        Label("nav.apiKeys".localized(), systemImage: "key.horizontal")
+                            .tag(NavigationPage.apiKeys)
+                        
+                        if loggingToFile {
+                            Label("nav.logs".localized(), systemImage: "doc.text")
+                                .tag(NavigationPage.logs)
+                        }
                     }
                     
                     Label("nav.settings".localized(), systemImage: "gearshape")
@@ -220,47 +250,42 @@ struct ContentView: View {
                         .tag(NavigationPage.about)
                 }
                 
+                // Status section - different per mode
                 Section {
-                    HStack {
-                        if viewModel.proxyManager.isStarting {
-                            ProgressView()
-                                .controlSize(.mini)
-                                .frame(width: 8, height: 8)
-                        } else {
-                            Circle()
-                                .fill(viewModel.proxyManager.proxyStatus.running ? .green : .gray)
-                                .frame(width: 8, height: 8)
-                        }
-                        
-                        if viewModel.proxyManager.isStarting {
-                            Text("status.starting".localized())
-                                .font(.caption)
-                        } else {
-                            Text(viewModel.proxyManager.proxyStatus.running ? "status.running".localized() : "status.stopped".localized())
-                                .font(.caption)
-                        }
-                        
-                        Spacer()
-                        
-                        Text(":\(viewModel.proxyManager.port)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    if modeManager.isFullMode {
+                        // Full mode: Show proxy status
+                        ProxyStatusRow(viewModel: viewModel)
+                    } else {
+                        // Quota-only mode: Show last refresh time
+                        QuotaRefreshStatusRow(viewModel: viewModel)
                     }
                 }
             }
             .navigationTitle("Quotio")
             .toolbar {
                 ToolbarItem {
-                    if viewModel.proxyManager.isStarting {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Button {
-                            Task { await viewModel.toggleProxy() }
-                        } label: {
-                            Image(systemName: viewModel.proxyManager.proxyStatus.running ? "stop.fill" : "play.fill")
+                    if modeManager.isFullMode {
+                        // Full mode: proxy controls
+                        if viewModel.proxyManager.isStarting {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Button {
+                                Task { await viewModel.toggleProxy() }
+                            } label: {
+                                Image(systemName: viewModel.proxyManager.proxyStatus.running ? "stop.fill" : "play.fill")
+                            }
+                            .help(viewModel.proxyManager.proxyStatus.running ? "action.stopProxy".localized() : "action.startProxy".localized())
                         }
-                        .help(viewModel.proxyManager.proxyStatus.running ? "action.stopProxy".localized() : "action.startProxy".localized())
+                    } else {
+                        // Quota-only mode: refresh button
+                        Button {
+                            Task { await viewModel.refreshQuotasDirectly() }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .help("action.refreshQuota".localized())
+                        .disabled(viewModel.isLoadingQuotas)
                     }
                 }
             }
@@ -283,6 +308,74 @@ struct ContentView: View {
             case .about:
                 AboutScreen()
             }
+        }
+    }
+}
+
+// MARK: - Sidebar Status Rows
+
+/// Proxy status row for Full Mode
+struct ProxyStatusRow: View {
+    let viewModel: QuotaViewModel
+    
+    var body: some View {
+        HStack {
+            if viewModel.proxyManager.isStarting {
+                ProgressView()
+                    .controlSize(.mini)
+                    .frame(width: 8, height: 8)
+            } else {
+                Circle()
+                    .fill(viewModel.proxyManager.proxyStatus.running ? .green : .gray)
+                    .frame(width: 8, height: 8)
+            }
+            
+            if viewModel.proxyManager.isStarting {
+                Text("status.starting".localized())
+                    .font(.caption)
+            } else {
+                Text(viewModel.proxyManager.proxyStatus.running ? "status.running".localized() : "status.stopped".localized())
+                    .font(.caption)
+            }
+            
+            Spacer()
+            
+            Text(":\(viewModel.proxyManager.port)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Quota refresh status row for Quota-Only Mode
+struct QuotaRefreshStatusRow: View {
+    let viewModel: QuotaViewModel
+    
+    var body: some View {
+        HStack {
+            if viewModel.isLoadingQuotas {
+                ProgressView()
+                    .controlSize(.mini)
+                    .frame(width: 8, height: 8)
+                Text("status.refreshing".localized())
+                    .font(.caption)
+            } else {
+                Image(systemName: "clock")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                
+                if let lastRefresh = viewModel.lastQuotaRefreshTime {
+                    Text("Updated \(lastRefresh, style: .relative) ago")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("status.notRefreshed".localized())
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            Spacer()
         }
     }
 }
