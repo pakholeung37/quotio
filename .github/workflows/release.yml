@@ -196,3 +196,15 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Assets" >> $GITHUB_STEP_SUMMARY
           ls -la build/release/ >> $GITHUB_STEP_SUMMARY
+
+      # ===========================================
+      # 13. Trigger homebrew-tap update
+      # ===========================================
+      - name: Trigger homebrew-tap update
+        if: steps.version.outputs.IS_PRERELEASE == 'false'
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.TAP_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/nguyenphutrong/homebrew-tap/dispatches \
+            -d '{"event_type":"quotio-release","client_payload":{"version":"${{ steps.version.outputs.VERSION }}"}}'

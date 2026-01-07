@@ -74,6 +74,12 @@ Quotio peut configurer automatiquement ces outils pour utiliser votre proxy cent
 - macOS 15.0 (Sequoia) ou ultérieur
 - Connexion Internet pour l'authentification OAuth
 
+### Homebrew (Recommandé)
+```bash
+brew tap nguyenphutrong/tap
+brew install --cask quotio
+```
+
 ### Téléchargement
 Téléchargez le dernier `.dmg` depuis la page [Releases](https://github.com/nguyenphutrong/quotio/releases).
 

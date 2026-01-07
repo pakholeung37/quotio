@@ -98,6 +98,11 @@ struct ProvidersScreen: View {
     private var totalAccountCount: Int {
         groupedAccounts.values.reduce(0) { $0 + $1.count }
     }
+
+    /// Account count per provider (for AddProviderPopover badge display)
+    private var providerAccountCounts: [AIProvider: Int] {
+        groupedAccounts.mapValues { $0.count }
+    }
     
     // MARK: - Body
     
@@ -163,6 +168,7 @@ struct ProvidersScreen: View {
         .sheet(isPresented: $showAddProviderPopover) {
             AddProviderPopover(
                 providers: addableProviders,
+                existingCounts: providerAccountCounts,
                 onSelectProvider: { provider in
                     handleAddProvider(provider)
                 },
@@ -538,7 +544,7 @@ struct OAuthSheet: View {
     let onDismiss: () -> Void
     
     @State private var hasStartedAuth = false
-    @State private var selectedKiroMethod: AuthCommand = .kiroGoogleLogin
+    @State private var selectedKiroMethod: AuthCommand = .kiroImport
     
     private var isPolling: Bool {
         viewModel.oauthState?.status == .polling || viewModel.oauthState?.status == .waiting
@@ -553,7 +559,7 @@ struct OAuthSheet: View {
     }
     
     private var kiroAuthMethods: [AuthCommand] {
-        [.kiroGoogleLogin, .kiroAWSAuthCode, .kiroAWSLogin, .kiroImport]
+        [.kiroImport, .kiroGoogleLogin, .kiroAWSAuthCode, .kiroAWSLogin]
     }
     
     var body: some View {
@@ -593,6 +599,8 @@ struct OAuthSheet: View {
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
+                    
+
                 }
                 .frame(maxWidth: 320)
             }
@@ -640,7 +648,9 @@ struct OAuthSheet: View {
             }
         }
         .padding(40)
-        .frame(width: 480, height: 400)
+        .frame(width: 480)
+        .frame(minHeight: 350)
+        .fixedSize(horizontal: false, vertical: true)
         .animation(.easeInOut(duration: 0.2), value: viewModel.oauthState?.status)
         .onChange(of: viewModel.oauthState?.status) { _, newStatus in
             if newStatus == .success {
@@ -784,6 +794,6 @@ private struct OAuthStatusView: View {
                 .padding(.vertical, 16)
             }
         }
-        .frame(height: 120)
+        .frame(minHeight: 100)
     }
 }

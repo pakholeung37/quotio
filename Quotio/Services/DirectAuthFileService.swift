@@ -95,6 +95,8 @@ actor DirectAuthFileService {
             if let authFile = parseAuthFileJSON(at: filePath, filename: file) {
                 authFiles.append(authFile)
                 continue
+            } else {
+                // Parse failed
             }
             
             // Fallback: parse from filename if JSON parsing fails
@@ -134,14 +136,23 @@ actor DirectAuthFileService {
         }
         
         // Extract metadata
-        let email = json["email"] as? String
+        var email = json["email"] as? String
         let login = json["login"] as? String
         let accountType = json["account_type"] as? String
+        
+        // For Kiro: if email is empty, try to use provider (e.g., "Google") as identifier
+        if provider == .kiro && (email == nil || email?.isEmpty == true) {
+            if let authProvider = json["provider"] as? String {
+                email = "Kiro (\(authProvider))"
+            }
+        }
         
         // Parse expired date
         var expiredDate: Date?
         if let expiredString = json["expired"] as? String {
             expiredDate = parseISO8601Date(expiredString)
+        } else if let expiredInt = json["expired"] as? Double { // Handle numeric timestamp
+            expiredDate = Date(timeIntervalSince1970: expiredInt)
         }
         
         return DirectAuthFile(
@@ -272,31 +283,67 @@ actor DirectAuthFileService {
             if let accessToken = json["access_token"] as? String {
                 let refreshToken = json["refresh_token"] as? String
                 let expiresAt = json["expiry"] as? String ?? json["expires_at"] as? String
-                return AuthTokenData(accessToken: accessToken, refreshToken: refreshToken, expiresAt: expiresAt)
+                return AuthTokenData(accessToken: accessToken, refreshToken: refreshToken, expiresAt: expiresAt, clientId: nil, clientSecret: nil, extras: nil)
             }
             
         case .codex:
             // OpenAI format - uses bearer token or API key
             if let token = json["access_token"] as? String ?? json["api_key"] as? String {
-                return AuthTokenData(accessToken: token, refreshToken: nil, expiresAt: nil)
+                return AuthTokenData(accessToken: token, refreshToken: nil, expiresAt: nil, clientId: nil, clientSecret: nil, extras: nil)
             }
             
         case .copilot:
             // GitHub OAuth format
             if let accessToken = json["access_token"] as? String ?? json["oauth_token"] as? String {
-                return AuthTokenData(accessToken: accessToken, refreshToken: nil, expiresAt: nil)
+                return AuthTokenData(accessToken: accessToken, refreshToken: nil, expiresAt: nil, clientId: nil, clientSecret: nil, extras: nil)
             }
             
         case .claude:
             // Anthropic OAuth
             if let sessionKey = json["session_key"] as? String ?? json["access_token"] as? String {
-                return AuthTokenData(accessToken: sessionKey, refreshToken: nil, expiresAt: nil)
+                return AuthTokenData(accessToken: sessionKey, refreshToken: nil, expiresAt: nil, clientId: nil, clientSecret: nil, extras: nil)
+            }
+            
+        case .kiro:
+            // Kiro (AWS CodeWhisperer) format
+            if let accessToken = json["access_token"] as? String {
+
+                let refreshToken = json["refresh_token"] as? String
+                
+                // Robust parsing for expires_at (could be string or int/double)
+                var expiresAt: String?
+                if let expStr = json["expires_at"] as? String ?? json["expiry"] as? String {
+                    expiresAt = expStr
+                } else if let expNum = json["expires_at"] as? Double ?? json["expiry"] as? Double {
+                    // Convert numeric timestamp to ISO string for consistency in AuthTokenData
+                    expiresAt = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: expNum))
+                }
+                
+                let clientId = json["client_id"] as? String
+                let clientSecret = json["client_secret"] as? String
+                
+                var extras: [String: String] = [:]
+                if let startUrl = json["start_url"] as? String ?? json["startUrl"] as? String {
+                    extras["start_url"] = startUrl
+                }
+                if let region = json["region"] as? String {
+                    extras["region"] = region
+                }
+                
+                return AuthTokenData(
+                    accessToken: accessToken, 
+                    refreshToken: refreshToken, 
+                    expiresAt: expiresAt,
+                    clientId: clientId,
+                    clientSecret: clientSecret,
+                    extras: extras
+                )
             }
             
         default:
             // Generic token extraction
             if let token = json["access_token"] as? String ?? json["token"] as? String {
-                return AuthTokenData(accessToken: token, refreshToken: nil, expiresAt: nil)
+                return AuthTokenData(accessToken: token, refreshToken: nil, expiresAt: nil, clientId: nil, clientSecret: nil, extras: nil)
             }
         }
         
@@ -311,6 +358,9 @@ struct AuthTokenData: Sendable {
     let accessToken: String
     let refreshToken: String?
     let expiresAt: String?
+    let clientId: String?
+    let clientSecret: String?
+    let extras: [String: String]?
     
     var isExpired: Bool {
         guard let expiresAt = expiresAt else { return false }

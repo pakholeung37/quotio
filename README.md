@@ -74,6 +74,12 @@ Quotio can automatically configure these tools to use your centralized proxy:
 - macOS 15.0 (Sequoia) or later
 - Internet connection for OAuth authentication
 
+### Homebrew (Recommended)
+```bash
+brew tap nguyenphutrong/tap
+brew install --cask quotio
+```
+
 ### Download
 Download the latest `.dmg` from the [Releases](https://github.com/nguyenphutrong/quotio/releases) page.
 

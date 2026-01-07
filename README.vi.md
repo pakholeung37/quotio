@@ -74,6 +74,12 @@ Quotio có thể tự động cấu hình các công cụ sau:
 - macOS 15.0 (Sequoia) trở lên
 - Kết nối internet để xác thực OAuth
 
+### Homebrew (Khuyến nghị)
+```bash
+brew tap nguyenphutrong/tap
+brew install --cask quotio
+```
+
 ### Tải xuống
 Tải file `.dmg` mới nhất từ trang [Releases](https://github.com/nguyenphutrong/quotio/releases).
 
